@@ -98,6 +98,7 @@ func (l *loggingT) write(s severity, data *buffer) error {
         if _, err := l.out[warningLog].Write(data.Bytes()); err != nil {
             return err
         }
+        fallthrough
     case infoLog:
         if _, err := l.out[infoLog].Write(data.Bytes()); err != nil {
             return err
@@ -112,11 +113,12 @@ func (l *loggingT) formatHeader(s severity, depth int) *buffer {
     b.WriteByte(severityChar[s])
     b.WriteByte(' ')
     b.WriteString(file)
+    b.WriteByte(':')
 
     b.store(line)
 
     for i := len(b.lines) - 1; i >= 0; i-- {
-        b.WriteByte(b.lines[i] + ' ')
+        b.WriteByte(b.lines[i] + '0')
     }
 
     b.WriteByte(' ')
@@ -182,6 +184,7 @@ func newLoggingT(name, dir string) (*loggingT, error) {
         }
         res.out[i] = file
     }
+    go res.Sync()
     return res, nil
 }
 
