@@ -1,1 +1,1 @@
-module github.com/rd-code/log
+module github.com/rd-code/go-log
