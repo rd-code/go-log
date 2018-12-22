@@ -7,6 +7,7 @@ import (
     "io"
     "os"
     "runtime"
+    "strings"
     "sync"
     "time"
 )
@@ -61,6 +62,8 @@ type loggingT struct {
     freeListMu sync.Mutex
     freeList   *buffer
 
+    workDirectoryPath string
+
     out [numSeverity]writerSync
 }
 
@@ -110,6 +113,11 @@ func (l *loggingT) write(s severity, data *buffer) error {
 func (l *loggingT) formatHeader(s severity, depth int) *buffer {
     b := l.getBuffer()
     _, file, line, _ := runtime.Caller(3 + depth)
+    if len(l.workDirectoryPath) != 0 {
+        if strings.HasPrefix(file, l.workDirectoryPath) {
+            file = file[len(l.workDirectoryPath)-1:]
+        }
+    }
     b.WriteByte(severityChar[s])
     b.WriteByte(' ')
     b.WriteString(file)
@@ -174,8 +182,10 @@ func (l *loggingT) Error(args ...interface{}) error {
     return l.error(1, args...)
 }
 
-func newLoggingT(name, dir string) (*loggingT, error) {
-    res := &loggingT{}
+func newLoggingT(name, dir, wd string) (*loggingT, error) {
+    res := &loggingT{
+        workDirectoryPath: wd,
+    }
     now := time.Now()
     for i := infoLog; i < numSeverity; i++ {
         file, err := createFile(name, dir, severityName[i], now)
@@ -188,17 +198,18 @@ func newLoggingT(name, dir string) (*loggingT, error) {
     return res, nil
 }
 
-func NewLog(name, dir string) (Log, error) {
-    return newLoggingT(name, dir)
+func NewLog(name, dir, wd string) (Log, error) {
+    return newLoggingT(name, dir, wd)
 }
 
 var varLog *loggingT
 
 var name = flag.String("log_name", "app", "the name of log")
 var dir = flag.String("log_dir", os.TempDir(), "the directory of logs")
+var wd, _ = os.Getwd()
 
 func Load() error {
-    t, err := newLoggingT(*name, *dir)
+    t, err := newLoggingT(*name, *dir, wd)
     if err != nil {
         return err
     }
