@@ -116,6 +116,9 @@ func (l *loggingT) formatHeader(s severity, depth int) *buffer {
     if len(l.workDirectoryPath) != 0 {
         if strings.HasPrefix(file, l.workDirectoryPath) {
             file = file[len(l.workDirectoryPath):]
+            if strings.HasPrefix(file,"/"){
+                file=file[1:]
+            }
         }
     }
     b.WriteByte(severityChar[s])
