@@ -91,6 +91,11 @@ func (l *loggingT) getBuffer() (*buffer) {
 func (l *loggingT) write(s severity, data *buffer) error {
     l.mu.Lock()
     defer l.mu.Unlock()
+    if *stdout {
+        if s >= *stdLevel {
+            os.Stdout.Write(data.Bytes())
+        }
+    }
     switch s {
     case errLog:
         if _, err := l.out[errLog].Write(data.Bytes()); err != nil {
@@ -116,8 +121,8 @@ func (l *loggingT) formatHeader(s severity, depth int) *buffer {
     if len(l.workDirectoryPath) != 0 {
         if strings.HasPrefix(file, l.workDirectoryPath) {
             file = file[len(l.workDirectoryPath):]
-            if strings.HasPrefix(file,"/"){
-                file=file[1:]
+            if strings.HasPrefix(file, "/") {
+                file = file[1:]
             }
         }
     }
@@ -209,6 +214,8 @@ var varLog *loggingT
 
 var name = flag.String("log_name", "app", "the name of log")
 var dir = flag.String("log_dir", os.TempDir(), "the directory of logs")
+var stdout = flag.Bool("stdout", false, "the output is to stdout")
+var stdLevel = flag.Int("stdlevel", warningLog, "the stdout level")
 var wd, _ = os.Getwd()
 
 func Load() error {
