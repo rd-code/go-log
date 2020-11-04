@@ -1,17 +1,5 @@
 package log
 
-import (
-    "bytes"
-    "flag"
-    "fmt"
-    "io"
-    "os"
-    "runtime"
-    "strings"
-    "sync"
-    "time"
-)
-
 /**
  * DESCRIPTION:
  *
@@ -19,228 +7,75 @@ import (
  * @create 2018-12-08 17:48
  **/
 
-type severity = int
+//默认日志实现类
+var defaultLogger Logger = nil
 
-const (
-    infoLog severity = iota
-    warningLog
-    errLog
-)
-const numSeverity = 3
-
-const severityChar = "IWE"
-
-var severityName = []string{
-    infoLog:    "INFO",
-    warningLog: "WARNING",
-    errLog:     "ERROR",
+//初始化默认日志实现类
+func InitDefault(options *Options) (err error) {
+	defaultLogger, err = NewLogger(options)
+	if err != nil {
+		return
+	}
+	defaultLogger.SetLevel(2)
+	return
 }
 
-type buffer struct {
-    bytes.Buffer
-    lines []byte
-    next  *buffer
+//写debug日志
+func Debug(args ...interface{}) {
+	defaultLogger.Debug(args...)
 }
 
-func (b *buffer) store(value int) {
-    if b.lines != nil {
-        b.lines = b.lines[:0]
-    }
-    for value != 0 {
-        b.lines = append(b.lines, byte(value%10))
-        value /= 10
-    }
+//写格式化Debug日志
+func DebugF(format string, args ...interface{}) {
+	defaultLogger.DebugF(format, args...)
 }
 
-type writerSync interface {
-    io.Writer
-    Sync() error
+//参考Debug
+func Info(args ...interface{}) {
+	defaultLogger.Info(args...)
 }
 
-type loggingT struct {
-    mu         sync.Mutex
-    freeListMu sync.Mutex
-    freeList   *buffer
-
-    workDirectoryPath string
-
-    out [numSeverity]writerSync
+//参考DebugF
+func InfoF(format string, args ...interface{}) {
+	defaultLogger.InfoF(format, args...)
 }
 
-func (l *loggingT) putBuffer(b *buffer) {
-    l.freeListMu.Lock()
-    defer l.freeListMu.Unlock()
-    b.next = l.freeList
-    l.freeList = b
+//参考Debug
+func Trace(args ...interface{}) {
+	defaultLogger.Trace(args...)
 }
 
-func (l *loggingT) getBuffer() (*buffer) {
-    l.freeListMu.Lock()
-    defer l.freeListMu.Unlock()
-    b := l.freeList
-    if b != nil {
-        l.freeList = b.next
-        b.next = nil
-    } else {
-        b = new(buffer)
-    }
-    b.Reset()
-    return b
+//参考DebugF
+func TraceF(format string, args ...interface{}) {
+	defaultLogger.TraceF(format, args ...)
 }
 
-func (l *loggingT) write(s severity, data *buffer) error {
-    l.mu.Lock()
-    defer l.mu.Unlock()
-    if *stdout {
-        if s >= *stdLevel {
-            os.Stdout.Write(data.Bytes())
-        }
-    }
-    switch s {
-    case errLog:
-        if _, err := l.out[errLog].Write(data.Bytes()); err != nil {
-            return err
-        }
-        fallthrough
-    case warningLog:
-        if _, err := l.out[warningLog].Write(data.Bytes()); err != nil {
-            return err
-        }
-        fallthrough
-    case infoLog:
-        if _, err := l.out[infoLog].Write(data.Bytes()); err != nil {
-            return err
-        }
-    }
-    return nil
+//参考Debug
+func Notice(args ...interface{}) {
+	defaultLogger.Notice(args...)
 }
 
-func (l *loggingT) formatHeader(s severity, depth int) *buffer {
-    b := l.getBuffer()
-    _, file, line, _ := runtime.Caller(3 + depth)
-    if len(l.workDirectoryPath) != 0 {
-        if strings.HasPrefix(file, l.workDirectoryPath) {
-            file = file[len(l.workDirectoryPath):]
-            if strings.HasPrefix(file, "/") {
-                file = file[1:]
-            }
-        }
-    }
-    b.WriteByte(severityChar[s])
-    b.WriteByte(' ')
-    b.WriteString(file)
-    b.WriteByte(':')
-
-    b.store(line)
-
-    for i := len(b.lines) - 1; i >= 0; i-- {
-        b.WriteByte(b.lines[i] + '0')
-    }
-
-    b.WriteByte(' ')
-
-    b.WriteString(time.Now().Format("2006-01-02T15:04:05"))
-    b.WriteByte(' ')
-    b.WriteByte(']')
-    b.WriteByte(' ')
-    return b
-
+//参考DebugF
+func NoticeF(format string, args ...interface{}) {
+	defaultLogger.NoticeF(format, args...)
 }
 
-func (l *loggingT) print(s severity, depth int, args ...interface{}) error {
-    b := l.formatHeader(s, depth)
-    fmt.Fprintln(b, args...)
-    return l.write(s, b)
+//参考Debug
+func War(args ...interface{}) {
+	defaultLogger.Warn(args...)
 }
 
-func (l *loggingT) Sync() {
-    for range time.Tick(time.Second * 30) {
-        l.sync()
-    }
+//参考DebugF
+func WarnF(format string, args ...interface{}) {
+	defaultLogger.WarnF(format, args...)
 }
 
-func (l *loggingT) sync() {
-    l.mu.Lock()
-    defer l.mu.Unlock()
-    for i := 0; i < numSeverity; i++ {
-        l.out[i].Sync()
-    }
+//参考Debug
+func Error(args ...interface{}) {
+	defaultLogger.Error(args...)
 }
 
-func (l *loggingT) info(depth int, args ...interface{}) error {
-    return l.print(infoLog, depth, args...)
-}
-
-func (l *loggingT) Info(args ...interface{}) error {
-    return l.info(1, args...)
-}
-
-func (l *loggingT) warning(depth int, args ...interface{}) error {
-    return l.print(warningLog, depth, args...)
-}
-
-func (l *loggingT) Warning(args ...interface{}) error {
-    return l.warning(1, args...)
-}
-
-func (l *loggingT) error(depth int, args ...interface{}) error {
-    return l.print(errLog, depth, args...)
-}
-func (l *loggingT) Error(args ...interface{}) error {
-    return l.error(1, args...)
-}
-
-func newLoggingT(name, dir, wd string) (*loggingT, error) {
-    res := &loggingT{
-        workDirectoryPath: wd,
-    }
-    now := time.Now()
-    for i := infoLog; i < numSeverity; i++ {
-        file, err := createFile(name, dir, severityName[i], now)
-        if err != nil {
-            return nil, err
-        }
-        res.out[i] = file
-    }
-    go res.Sync()
-    return res, nil
-}
-
-func NewLog(name, dir, wd string) (Log, error) {
-    return newLoggingT(name, dir, wd)
-}
-
-var varLog *loggingT
-
-var name = flag.String("log_name", "app", "the name of log")
-var dir = flag.String("log_dir", os.TempDir(), "the directory of logs")
-var stdout = flag.Bool("stdout", false, "the output is to stdout")
-var stdLevel = flag.Int("stdlevel", warningLog, "the stdout level")
-var wd, _ = os.Getwd()
-
-func Load() error {
-    t, err := newLoggingT(*name, *dir, wd)
-    if err != nil {
-        return err
-    }
-    varLog = t
-    return nil
-}
-
-type Log interface {
-    Info(...interface{}) error
-    Warning(...interface{}) error
-    Error(...interface{}) error
-}
-
-func Info(args ...interface{}) error {
-    return varLog.info(1, args...)
-}
-
-func Warning(args ...interface{}) error {
-    return varLog.warning(1, args...)
-}
-
-func Error(args ...interface{}) error {
-    return varLog.error(1, args)
+//参考DebugF
+func ErrorF(format string, args ...interface{}) {
+	defaultLogger.ErrorF(format, args...)
 }
