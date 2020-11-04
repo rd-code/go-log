@@ -134,6 +134,8 @@ type Options struct {
 	Severity Severity
 	//是否输出到终端
 	StdOut bool
+	//channel的缓存大小
+	Current int
 }
 
 //日志打印具体功能实现
@@ -393,7 +395,7 @@ func newLoggingT(options *Options) (res *loggingT, err error) {
 	if err = res.initOut(); err != nil {
 		return
 	}
-	res.channel = make(chan loggingMsg, 1)
+	res.channel = make(chan loggingMsg, options.Current)
 	go res.consume(res.channel)
 	return
 }
