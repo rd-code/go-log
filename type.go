@@ -142,20 +142,26 @@ type Options struct {
 type loggingT struct {
 	options *Options
 	out     [serverityNum]*os.File
-	channel chan loggingMsg
+	channel chan *loggingMsg
 	//调用层级
 	level int
 	//是否设置了level
 	setLevel bool
+	//当前日志所在时刻
+	current string
+	//错误信息
+	err error
 }
 
 type loggingMsg struct {
 	severity Severity
 	data     []byte
+	//日志时刻
+	current string
 }
 
 //设置日志输出流
-func (l *loggingT) initOut() (err error) {
+func (l *loggingT) initOut(current string) (err error) {
 	operator := &fileOperator{
 		Dir:  l.options.Dir,
 		Name: l.options.Name,
@@ -169,13 +175,30 @@ func (l *loggingT) initOut() (err error) {
 		}
 		l.out[i] = file
 	}
+	l.current = current
 	return
+}
+
+//处理日志时间和文件的对应
+func (l *loggingT) handleTime(msg *loggingMsg) {
+	if l.current == msg.current {
+		return
+	}
+	for i := DEBUG; i <= ERROR; i++ {
+		l.out[i].Close()
+	}
+
+	if l.err = l.initOut(msg.current); l.err != nil {
+		fmt.Println("init out failed", l.err)
+	}
+
 }
 
 //日志的消费者，从通道中消费日志并把日志写入到日志文件
 //需要注意，如果写入失败，会将错误信息打印到终端，不会阻塞主流程
-func (l *loggingT) consume(channel <-chan loggingMsg) {
+func (l *loggingT) consume(channel <-chan *loggingMsg) {
 	for msg := range channel {
+		l.handleTime(msg)
 		if err := l.write(msg.severity, msg.data); err != nil {
 			fmt.Printf("write msg to log failed, err:%+v", err)
 		}
@@ -189,6 +212,9 @@ func (l *loggingT) write(severity Severity, data []byte) (err error) {
 		if _, err = os.Stdout.Write(data); err != nil {
 			return
 		}
+	}
+	if l.err != nil {
+		return
 	}
 
 	//高等级日志一定会在低等级日志文件中出现
@@ -231,40 +257,42 @@ func (l *loggingT) write(severity Severity, data []byte) (err error) {
 }
 
 //将日志信息写入到通道
-func (l *loggingT) produce(severity Severity, data []byte) {
-	msg := loggingMsg{
+func (l *loggingT) produce(severity Severity, data []byte, current string) {
+	msg := &loggingMsg{
 		severity: severity,
 		data:     data,
+		current:  current,
 	}
 	l.channel <- msg
 }
 
 //获取日志header信息
-func (l *loggingT) getHeader(severity Severity, level int) *bytes.Buffer {
+func (l *loggingT) getHeader(severity Severity, level int) (*bytes.Buffer, string) {
 	_, file, line, _ := runtime.Caller(level + 4)
+	now := time.Now()
 	buffer := &bytes.Buffer{}
 	buffer.WriteString(severityName[severity])
 	buffer.WriteString(" ")
-	buffer.WriteString(time.Now().Format(TIME_FORMAT))
+	buffer.WriteString(now.Format(TIME_FORMAT))
 	buffer.WriteString(" ")
 	buffer.WriteString(file)
 	buffer.WriteString(":")
 	buffer.WriteString(strconv.Itoa(line))
 	buffer.WriteString(" ->] ")
-	return buffer
+	return buffer, now.Format(FILE_SUFFIX_TIME_FORMAT)
 }
 
 //生成日志内容信息
-func (l *loggingT) generateContent(severity Severity, level int, args ...interface{}) *bytes.Buffer {
-	buffer := l.getHeader(severity, level)
+func (l *loggingT) generateContent(severity Severity, level int, args ...interface{}) (*bytes.Buffer, string) {
+	buffer, current := l.getHeader(severity, level)
 	buffer.WriteString(fmt.Sprintln(args...))
-	return buffer
+	return buffer, current
 }
 
 //写日志
 func (l *loggingT) writeLog(severity Severity, level int, args ...interface{}) {
-	buffer := l.generateContent(severity, level, args...)
-	l.produce(severity, buffer.Bytes())
+	buffer, current := l.generateContent(severity, level, args...)
+	l.produce(severity, buffer.Bytes(), current)
 }
 
 //写debug日志
@@ -392,10 +420,10 @@ func (l *loggingT) ErrorF(format string, args ...interface{}) {
 //创建日志信息
 func newLoggingT(options *Options) (res *loggingT, err error) {
 	res = &loggingT{options: options}
-	if err = res.initOut(); err != nil {
+	if err = res.initOut(time.Now().Format(FILE_SUFFIX_TIME_FORMAT)); err != nil {
 		return
 	}
-	res.channel = make(chan loggingMsg, options.Current)
+	res.channel = make(chan *loggingMsg, options.Current)
 	go res.consume(res.channel)
 	return
 }
