@@ -61,7 +61,7 @@ func NoticeF(format string, args ...interface{}) {
 }
 
 //参考Debug
-func War(args ...interface{}) {
+func Warn(args ...interface{}) {
 	defaultLogger.Warn(args...)
 }
 
