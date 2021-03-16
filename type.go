@@ -134,15 +134,12 @@ type Options struct {
 	Severity Severity
 	//是否输出到终端
 	StdOut bool
-	//channel的缓存大小
-	Current int
 }
 
 //日志打印具体功能实现
 type loggingT struct {
 	options *Options
 	out     [serverityNum]*os.File
-	channel chan *loggingMsg
 	//调用层级
 	level int
 	//是否设置了level
@@ -192,17 +189,6 @@ func (l *loggingT) handleTime(msg *loggingMsg) {
 		fmt.Println("init out failed", l.err)
 	}
 
-}
-
-//日志的消费者，从通道中消费日志并把日志写入到日志文件
-//需要注意，如果写入失败，会将错误信息打印到终端，不会阻塞主流程
-func (l *loggingT) consume(channel <-chan *loggingMsg) {
-	for msg := range channel {
-		l.handleTime(msg)
-		if err := l.write(msg.severity, msg.data); err != nil {
-			fmt.Printf("write msg to log failed, err:%+v", err)
-		}
-	}
 }
 
 //将具体日志打印到文件
@@ -263,7 +249,8 @@ func (l *loggingT) produce(severity Severity, data []byte, current string) {
 		data:     data,
 		current:  current,
 	}
-	l.channel <- msg
+	l.write(msg.severity, msg.data)
+
 }
 
 //获取日志header信息
@@ -423,8 +410,6 @@ func newLoggingT(options *Options) (res *loggingT, err error) {
 	if err = res.initOut(time.Now().Format(FILE_SUFFIX_TIME_FORMAT)); err != nil {
 		return
 	}
-	res.channel = make(chan *loggingMsg, options.Current)
-	go res.consume(res.channel)
 	return
 }
 

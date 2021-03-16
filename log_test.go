@@ -11,7 +11,6 @@ func TestInitDefault(t *testing.T) {
 		Name:     "app",
 		Severity: DEBUG,
 		StdOut:   false,
-		Current:  20,
 	}
 	if err := InitDefault(options); err != nil {
 		t.Fatal("create msg failed")
