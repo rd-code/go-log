@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strconv"
+	"sync"
 	"time"
 )
 
@@ -148,6 +149,7 @@ type loggingT struct {
 	current string
 	//错误信息
 	err error
+	mu  sync.Mutex
 }
 
 type loggingMsg struct {
@@ -181,6 +183,8 @@ func (l *loggingT) handleTime(msg *loggingMsg) {
 	if l.current == msg.current {
 		return
 	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
 	for i := DEBUG; i <= ERROR; i++ {
 		l.out[i].Close()
 	}
@@ -193,6 +197,8 @@ func (l *loggingT) handleTime(msg *loggingMsg) {
 
 //将具体日志打印到文件
 func (l *loggingT) write(severity Severity, data []byte) (err error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
 	//如果需要将信息输出到终端，则使用终端进行打印
 	if l.options.StdOut {
 		if _, err = os.Stdout.Write(data); err != nil {
@@ -249,6 +255,7 @@ func (l *loggingT) produce(severity Severity, data []byte, current string) {
 		data:     data,
 		current:  current,
 	}
+	l.handleTime(msg)
 	l.write(msg.severity, msg.data)
 
 }
