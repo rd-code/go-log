@@ -164,7 +164,7 @@ func (l *loggingT) initOut(current string) (err error) {
 	operator := &fileOperator{
 		Dir:  l.options.Dir,
 		Name: l.options.Name,
-		Time: time.Now().Format(FILE_SUFFIX_TIME_FORMAT),
+		Time: current,
 	}
 	for i := DEBUG; i <= ERROR; i++ {
 		operator.Severity = i
@@ -183,6 +183,7 @@ func (l *loggingT) handleTime(msg *loggingMsg) {
 	if l.current == msg.current {
 		return
 	}
+	fmt.Println("========================:", msg.current)
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	for i := DEBUG; i <= ERROR; i++ {
