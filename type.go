@@ -183,7 +183,6 @@ func (l *loggingT) handleTime(msg *loggingMsg) {
 	if l.current == msg.current {
 		return
 	}
-	fmt.Println("========================:", msg.current)
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	for i := DEBUG; i <= ERROR; i++ {
