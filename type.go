@@ -2,7 +2,9 @@ package log
 
 import (
 	"bytes"
+	"context"
 	"fmt"
+	"math/rand"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -12,13 +14,13 @@ import (
 )
 
 type fileOperator struct {
-	Dir      string
-	Severity Severity
-	Name     string
-	Time     string
+	Dir   string
+	level Level
+	Name  string
+	Time  string
 }
 
-//创建日志所在目录
+// 创建日志所在目录
 func (f *fileOperator) createDir() (err error) {
 	file, err := os.Open(f.Dir)
 	if err != nil {
@@ -37,7 +39,7 @@ func (f *fileOperator) createDir() (err error) {
 	return DirectoryIsFile
 }
 
-//创建日志文件和链接文件
+// 创建日志文件和链接文件
 func (f *fileOperator) createFileAndLink(fileName, linkName string) (file *os.File, err error) {
 	//创建文件
 	if file, err = os.OpenFile(fileName, os.O_RDWR|os.O_CREATE|os.O_APPEND, os.ModePerm); err != nil {
@@ -66,14 +68,14 @@ label:
 	return
 }
 
-//生成文件名和链接名
+// 生成文件名和链接名
 func (f *fileOperator) generateFileAndLinkName() (fileName, linkName string) {
-	fileName = fmt.Sprintf("%s_%s_%s.log", f.Name, fileTag[f.Severity], f.Time)
-	linkName = fmt.Sprintf("%s_%s.log", f.Name, fileTag[f.Severity])
+	fileName = fmt.Sprintf("%s_%s_%s.log", f.Name, fileTag[f.level], f.Time)
+	linkName = fmt.Sprintf("%s_%s.log", f.Name, fileTag[f.level])
 	return
 }
 
-//生成系统使用的文件
+// 生成系统使用的文件
 func (f *fileOperator) generate() (file *os.File, err error) {
 	if err = f.createDir(); err != nil {
 		return
@@ -88,63 +90,58 @@ func (f *fileOperator) generate() (file *os.File, err error) {
 	return
 }
 
-const TIME_FORMAT = "2006-01-02T15:04:05"
+const TIME_FORMAT = "2006-01-02T15:04:05.000"
 
 const FILE_SUFFIX_TIME_FORMAT = "010215"
 
-//定义日志等级，有debug,info,trace,notice,warning,error 级别
-type Severity int
+// 定义日志等级，有debug,infonotice,warning,error 级别
+type Level = int
 
 const (
-	DEBUG Severity = iota
+	DEBUG Level = iota
 	INFO
-	TRACE
 	NOTICE
 	WARNING
 	ERROR
 )
 
-//日志级别总数
-const serverityNum = 6
+// 日志级别总数
+const levelNum = 5
 
-var severityName = [serverityNum]string{
+var levelName = [levelNum]string{
 	DEBUG:   "D",
 	INFO:    "I",
-	TRACE:   "T",
 	NOTICE:  "N",
 	WARNING: "W",
 	ERROR:   "E",
 }
 
-var fileTag = [serverityNum]string{
+var fileTag = [levelNum]string{
 	DEBUG:   "debug",
 	INFO:    "info",
-	TRACE:   "trace",
 	NOTICE:  "notice",
 	WARNING: "warn",
 	ERROR:   "error",
 }
 
-//打印日志配置信息
+// 打印日志配置信息
 type Options struct {
 	//日志所在目录
 	Dir string
 	//日志名称
 	Name string
 	//日志打印级别
-	Severity Severity
+	Level Level
 	//是否输出到终端
 	StdOut bool
 }
 
-//日志打印具体功能实现
+// 日志打印具体功能实现
 type loggingT struct {
 	options *Options
-	out     [serverityNum]*os.File
+	out     [levelNum]*os.File
 	//调用层级
-	level int
-	//是否设置了level
-	setLevel bool
+	callSkip int
 	//当前日志所在时刻
 	current string
 	//错误信息
@@ -153,13 +150,13 @@ type loggingT struct {
 }
 
 type loggingMsg struct {
-	severity Severity
-	data     []byte
+	level Level
+	data  []byte
 	//日志时刻
 	current string
 }
 
-//设置日志输出流
+// 设置日志输出流
 func (l *loggingT) initOut(current string) (err error) {
 	operator := &fileOperator{
 		Dir:  l.options.Dir,
@@ -167,7 +164,7 @@ func (l *loggingT) initOut(current string) (err error) {
 		Time: current,
 	}
 	for i := DEBUG; i <= ERROR; i++ {
-		operator.Severity = i
+		operator.level = i
 		var file *os.File
 		if file, err = operator.generate(); err != nil {
 			return
@@ -178,12 +175,11 @@ func (l *loggingT) initOut(current string) (err error) {
 	return
 }
 
-//处理日志时间和文件的对应
+// 处理日志时间和文件的对应
 func (l *loggingT) handleTime(msg *loggingMsg) {
 	if l.current == msg.current {
 		return
 	}
-	fmt.Println("========================:", msg.current)
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	for i := DEBUG; i <= ERROR; i++ {
@@ -193,11 +189,10 @@ func (l *loggingT) handleTime(msg *loggingMsg) {
 	if l.err = l.initOut(msg.current); l.err != nil {
 		fmt.Println("init out failed", l.err)
 	}
-
 }
 
-//将具体日志打印到文件
-func (l *loggingT) write(severity Severity, data []byte) (err error) {
+// 将具体日志打印到文件
+func (l *loggingT) write(level Level, data []byte) (err error) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	//如果需要将信息输出到终端，则使用终端进行打印
@@ -211,7 +206,7 @@ func (l *loggingT) write(severity Severity, data []byte) (err error) {
 	}
 
 	//高等级日志一定会在低等级日志文件中出现
-	switch severity {
+	switch level {
 	case ERROR:
 		if _, err = l.out[ERROR].Write(data); err != nil {
 			return
@@ -224,11 +219,6 @@ func (l *loggingT) write(severity Severity, data []byte) (err error) {
 		fallthrough
 	case NOTICE:
 		if _, err = l.out[NOTICE].Write(data); err != nil {
-			return
-		}
-		fallthrough
-	case TRACE:
-		if _, err = l.out[TRACE].Write(data); err != nil {
 			return
 		}
 		fallthrough
@@ -249,211 +239,206 @@ func (l *loggingT) write(severity Severity, data []byte) (err error) {
 	return
 }
 
-//将日志信息写入到通道
-func (l *loggingT) produce(severity Severity, data []byte, current string) {
+// 将日志信息写入到通道
+func (l *loggingT) produce(level Level, data []byte, current string) {
 	msg := &loggingMsg{
-		severity: severity,
-		data:     data,
-		current:  current,
+		level:   level,
+		data:    data,
+		current: current,
 	}
 	l.handleTime(msg)
-	l.write(msg.severity, msg.data)
-
+	l.write(msg.level, msg.data)
 }
 
-//获取日志header信息
-func (l *loggingT) getHeader(severity Severity, level int) (*bytes.Buffer, string) {
-	_, file, line, _ := runtime.Caller(level + 4)
+// 获取日志header信息
+func (l *loggingT) getHeaderField(ctx context.Context, level Level, msg string) ([]*Field, string) {
+	_, file, line, _ := runtime.Caller(l.callSkip + 4)
+	res := make([]*Field, 0, 4)
 	now := time.Now()
-	buffer := &bytes.Buffer{}
-	buffer.WriteString(severityName[severity])
-	buffer.WriteString(" ")
-	buffer.WriteString(now.Format(TIME_FORMAT))
-	buffer.WriteString(" ")
-	buffer.WriteString(file)
-	buffer.WriteString(":")
-	buffer.WriteString(strconv.Itoa(line))
-	buffer.WriteString(" ->] ")
-	return buffer, now.Format(FILE_SUFFIX_TIME_FORMAT)
+	res = append(res, StringField("_level_", levelName[level]),
+		StringField("_time_", now.Format(TIME_FORMAT)),
+		StringField("_file_", file+":"+strconv.Itoa(line)),
+		StringField("_logid_", GetLodId(ctx)),
+		StringField("_msg_", msg))
+	return res, now.Format(FILE_SUFFIX_TIME_FORMAT)
 }
 
-//生成日志内容信息
-func (l *loggingT) generateContent(severity Severity, level int, args ...interface{}) (*bytes.Buffer, string) {
-	buffer, current := l.getHeader(severity, level)
-	buffer.WriteString(fmt.Sprintln(args...))
+// 生成日志内容信息
+func (l *loggingT) generateContent(ctx context.Context, level Level, msg string, fields ...*Field) (*bytes.Buffer, string) {
+	headerFields, current := l.getHeaderField(ctx, level, msg)
+	headerFields = append(headerFields, fields...)
+	buffer := &bytes.Buffer{}
+	WriteToBuffer(buffer, headerFields...)
+	buffer.WriteByte('\n')
 	return buffer, current
 }
 
-//写日志
-func (l *loggingT) writeLog(severity Severity, level int, args ...interface{}) {
-	buffer, current := l.generateContent(severity, level, args...)
-	l.produce(severity, buffer.Bytes(), current)
+// 写日志
+func (l *loggingT) writeLog(ctx context.Context, level Level, msg string, fields ...*Field) {
+	buffer, current := l.generateContent(ctx, level, msg, fields...)
+	l.produce(level, buffer.Bytes(), current)
 }
 
-//写debug日志
-func (l *loggingT) debug(level int, args ...interface{}) {
-	if DEBUG < l.options.Severity {
+// 写debug日志
+func (l *loggingT) debug(ctx context.Context, msg string, fields ...*Field) {
+	if DEBUG < l.options.Level {
 		return
 	}
-	l.writeLog(DEBUG, level, args...)
+	l.writeLog(ctx, DEBUG, msg, fields...)
 }
 
-//写info日志
-func (l *loggingT) info(level int, args ...interface{}) {
-	if INFO < l.options.Severity {
+// 写info日志
+func (l *loggingT) info(ctx context.Context, msg string, fields ...*Field) {
+	if INFO < l.options.Level {
 		return
 	}
-	l.writeLog(INFO, level, args...)
+	l.writeLog(ctx, INFO, msg, fields...)
 }
 
-//写trace日志
-func (l *loggingT) trace(level int, args ...interface{}) {
-	if TRACE < l.options.Severity {
+// 写notice日志
+func (l *loggingT) notice(ctx context.Context, msg string, fields ...*Field) {
+	if NOTICE < l.options.Level {
 		return
 	}
-	l.writeLog(TRACE, level, args...)
+	l.writeLog(ctx, NOTICE, msg, fields...)
 }
 
-//写notice日志
-func (l *loggingT) notice(level int, args ...interface{}) {
-	if NOTICE < l.options.Severity {
+// 写warn日志
+func (l *loggingT) warn(ctx context.Context, msg string, fields ...*Field) {
+	if WARNING < l.options.Level {
 		return
 	}
-	l.writeLog(NOTICE, level, args...)
+	l.writeLog(ctx, WARNING, msg, fields...)
 }
 
-//写warn日志
-func (l *loggingT) warn(level int, args ...interface{}) {
-	if WARNING < l.options.Severity {
+// 写error日志
+func (l *loggingT) error(ctx context.Context, msg string, fields ...*Field) {
+	if ERROR < l.options.Level {
 		return
 	}
-	l.writeLog(WARNING, level, args...)
+	l.writeLog(ctx, ERROR, msg, fields...)
 }
 
-//写error日志
-func (l *loggingT) error(level int, args ...interface{}) {
-	if ERROR < l.options.Severity {
-		return
-	}
-	l.writeLog(ERROR, level, args...)
+// 增加日志显示调用方跳过的级别
+func (l *loggingT) AddCallSkip(callSkip int) {
+	l.callSkip = callSkip + callSkip
 }
 
-//设置日志显示调用方跳过的级别
-func (l *loggingT) SetLevel(level int) {
-	l.setLevel = true
-	l.level = level
+// 写入Debug日志
+func (l *loggingT) Debug(ctx context.Context, msg string, fields ...*Field) {
+	l.debug(ctx, msg, fields...)
 }
 
-//获取日志跳过层级
-func (l *loggingT) getLevel() int {
-	if l.setLevel {
-		return l.level
-	}
-	return 1
+// 写入带字符串格式化功能的bebug日志
+func (l *loggingT) DebugF(ctx context.Context, format string, args ...interface{}) {
+	l.debug(ctx, fmt.Sprintf(format, args...))
 }
 
-//写入Debug日志
-func (l *loggingT) Debug(args ...interface{}) {
-	l.debug(l.getLevel(), args...)
+// 参考Debug
+func (l *loggingT) Info(ctx context.Context, msg string, fields ...*Field) {
+	l.info(ctx, msg, fields...)
 }
 
-//写入带字符串格式化功能的bebug日志
-func (l *loggingT) DebugF(format string, args ...interface{}) {
-	l.debug(l.getLevel(), fmt.Sprintf(format, args...))
+// 参考DebugF
+func (l *loggingT) InfoF(ctx context.Context, format string, args ...interface{}) {
+	l.info(ctx, fmt.Sprintf(format, args...))
 }
 
-//参考Debug
-func (l *loggingT) Info(args ...interface{}) {
-	l.info(l.getLevel(), args...)
+// 参考Debug
+func (l *loggingT) Notice(ctx context.Context, msg string, fields ...*Field) {
+	l.notice(ctx, msg, fields...)
 }
 
-//参考DebugF
-func (l *loggingT) InfoF(format string, args ...interface{}) {
-	l.info(l.getLevel(), fmt.Sprintf(format, args...))
+// 参考DebugF
+func (l *loggingT) NoticeF(ctx context.Context, format string, args ...interface{}) {
+	l.notice(ctx, fmt.Sprintf(format, args...))
 }
 
-//参考Debug
-func (l *loggingT) Trace(args ...interface{}) {
-	l.trace(l.getLevel(), args...)
+// 参考Debug
+func (l *loggingT) Warn(ctx context.Context, msg string, fields ...*Field) {
+	l.warn(ctx, msg, fields...)
 }
 
-//参考DebugF
-func (l *loggingT) TraceF(format string, args ...interface{}) {
-	l.trace(l.getLevel(), fmt.Sprintf(format, args...))
+// 参考DebugF
+func (l *loggingT) WarnF(ctx context.Context, format string, args ...interface{}) {
+	l.warn(ctx, fmt.Sprintf(format, args...))
 }
 
-//参考Debug
-func (l *loggingT) Notice(args ...interface{}) {
-	l.notice(l.getLevel(), args...)
+// 参考Debug
+func (l *loggingT) Error(ctx context.Context, msg string, fields ...*Field) {
+	l.error(ctx, msg, fields...)
 }
 
-//参考DebugF
-func (l *loggingT) NoticeF(format string, args ...interface{}) {
-	l.notice(l.getLevel(), fmt.Sprintf(format, args...))
+// 参考DebugF
+func (l *loggingT) ErrorF(ctx context.Context, format string, args ...interface{}) {
+	l.error(ctx, fmt.Sprintf(format, args...))
 }
 
-//参考Debug
-func (l *loggingT) Warn(args ...interface{}) {
-	l.warn(l.getLevel(), args...)
-}
-
-//参考DebugF
-func (l *loggingT) WarnF(format string, args ...interface{}) {
-	l.warn(l.getLevel(), fmt.Sprintf(format, args...))
-}
-
-//参考Debug
-func (l *loggingT) Error(args ...interface{}) {
-	l.error(l.getLevel(), args...)
-}
-
-//参考DebugF
-func (l *loggingT) ErrorF(format string, args ...interface{}) {
-	l.error(l.getLevel(), fmt.Sprintf(format, args...))
-}
-
-//创建日志信息
+// 创建日志信息
 func newLoggingT(options *Options) (res *loggingT, err error) {
-	res = &loggingT{options: options}
+	res = &loggingT{options: options, callSkip: 1}
 	if err = res.initOut(time.Now().Format(FILE_SUFFIX_TIME_FORMAT)); err != nil {
 		return
 	}
 	return
 }
 
-//日志需要对外提供的功能
+// 日志需要对外提供的功能
 type Logger interface {
 	//写debug日志
-	Debug(args ...interface{})
+	Debug(ctx context.Context, msg string, fields ...*Field)
 	//写格式化Debug日志
-	DebugF(format string, args ...interface{})
+	DebugF(ctx context.Context, format string, args ...interface{})
 	//写info日志
-	Info(args ...interface{})
+	Info(ctx context.Context, msg string, fields ...*Field)
 	//写格式化info日志
-	InfoF(format string, args ...interface{})
-	//写trace日志
-	Trace(args ...interface{})
-	//写格式化trace日志
-	TraceF(format string, args ...interface{})
+	InfoF(ctx context.Context, format string, args ...interface{})
 	//写notice日志
-	Notice(args ...interface{})
+	Notice(ctx context.Context, msg string, fields ...*Field)
 	//写格式化notice日志
-	NoticeF(format string, args ...interface{})
+	NoticeF(ctx context.Context, format string, args ...interface{})
 	//写warn日志
-	Warn(args ...interface{})
+	Warn(ctx context.Context, msg string, fields ...*Field)
 	//写格式化warn日志
-	WarnF(format string, args ...interface{})
+	WarnF(ctx context.Context, format string, args ...interface{})
 	//写error日志
-	Error(args ...interface{})
+	Error(ctx context.Context, msg string, fields ...*Field)
 	//写格式化error日志
-	ErrorF(format string, args ...interface{})
+	ErrorF(ctx context.Context, format string, args ...interface{})
 	//设置调用往上跳过级别
-	SetLevel(level int)
+	AddCallSkip(callSkip int)
 }
 
 var _ Logger = &loggingT{}
 
-//生成日志模块
+// 生成日志模块
 func NewLogger(options *Options) (logger Logger, err error) {
 	return newLoggingT(options)
+}
+
+type LogIdT struct {
+}
+
+func WithLogId(ctx context.Context) context.Context {
+	return WithLogIdValue(ctx, genLogId())
+}
+
+func WithLogIdValue(ctx context.Context, value string) context.Context {
+	return context.WithValue(ctx, loggingT{}, value)
+}
+
+var random = rand.New(rand.NewSource(time.Now().UnixMilli()))
+
+func genLogId() string {
+	num := random.Intn(10000000000)
+	return fmt.Sprintf("%10d", num)
+}
+
+func GetLodId(ctx context.Context) string {
+	value := ctx.Value(loggingT{})
+	if value == nil {
+		return ""
+	}
+	res, _ := value.(string)
+	return res
 }
