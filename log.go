@@ -1,5 +1,7 @@
 package log
 
+import "context"
+
 /**
  * DESCRIPTION:
  *
@@ -16,66 +18,60 @@ func InitDefault(options *Options) (err error) {
 	if err != nil {
 		return
 	}
-	defaultLogger.SetLevel(2)
+	defaultLogger.AddCallSkip(1)
 	return
 }
 
+func AddCallSkip(callSkip int) {
+	defaultLogger.AddCallSkip(callSkip)
+}
+
 //写debug日志
-func Debug(args ...interface{}) {
-	defaultLogger.Debug(args...)
+func Debug(ctx context.Context, msg string, fields ...*Field) {
+	defaultLogger.Debug(ctx, msg, fields...)
 }
 
 //写格式化Debug日志
-func DebugF(format string, args ...interface{}) {
-	defaultLogger.DebugF(format, args...)
+func DebugF(ctx context.Context, format string, args ...interface{}) {
+	defaultLogger.DebugF(ctx, format, args...)
 }
 
 //参考Debug
-func Info(args ...interface{}) {
-	defaultLogger.Info(args...)
+func Info(ctx context.Context, msg string, fields ...*Field) {
+	defaultLogger.Info(ctx, msg, fields...)
 }
 
 //参考DebugF
-func InfoF(format string, args ...interface{}) {
-	defaultLogger.InfoF(format, args...)
+func InfoF(ctx context.Context, format string, args ...interface{}) {
+	defaultLogger.InfoF(ctx, format, args...)
 }
 
 //参考Debug
-func Trace(args ...interface{}) {
-	defaultLogger.Trace(args...)
+func Notice(ctx context.Context, msg string, fields ...*Field) {
+	defaultLogger.Notice(ctx, msg, fields...)
 }
 
 //参考DebugF
-func TraceF(format string, args ...interface{}) {
-	defaultLogger.TraceF(format, args ...)
+func NoticeF(ctx context.Context, format string, args ...interface{}) {
+	defaultLogger.NoticeF(ctx, format, args...)
 }
 
 //参考Debug
-func Notice(args ...interface{}) {
-	defaultLogger.Notice(args...)
+func Warn(ctx context.Context, msg string, fields ...*Field) {
+	defaultLogger.Warn(ctx, msg, fields...)
 }
 
 //参考DebugF
-func NoticeF(format string, args ...interface{}) {
-	defaultLogger.NoticeF(format, args...)
+func WarnF(ctx context.Context, format string, args ...interface{}) {
+	defaultLogger.WarnF(ctx, format, args...)
 }
 
 //参考Debug
-func Warn(args ...interface{}) {
-	defaultLogger.Warn(args...)
+func Error(ctx context.Context, msg string, fields ...*Field) {
+	defaultLogger.Error(ctx, msg, fields...)
 }
 
 //参考DebugF
-func WarnF(format string, args ...interface{}) {
-	defaultLogger.WarnF(format, args...)
-}
-
-//参考Debug
-func Error(args ...interface{}) {
-	defaultLogger.Error(args...)
-}
-
-//参考DebugF
-func ErrorF(format string, args ...interface{}) {
-	defaultLogger.ErrorF(format, args...)
+func ErrorF(ctx context.Context, format string, args ...interface{}) {
+	defaultLogger.ErrorF(ctx, format, args...)
 }
